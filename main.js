@@ -3,7 +3,8 @@ window.onload = function()
     // state = [u,v,r,psi,xpos,ypos,delta];
     dt = 0.2;
     state = [0,0,0,0,3000,5000,0]
-    ui = 0;
+    ui = 0.0;
+    timestamp = 0.0;
 
     
     canvas = document.getElementById("canvas");
@@ -15,18 +16,37 @@ window.onload = function()
     window.addEventListener("keyup", keyup_handler, false);
 
     // initialize charts
-    var trace1 = {
-        x:[state[4]], 
-        y:[state[5]], 
-        mode:'lines'
+    data = [{
+        x: [timestamp],
+        y: [ui],
+        mode: 'lines',
+        name: 'commanded',
+    },{
+        x: [timestamp],
+        y: [state[6]],
+        mode: 'lines',
+        name: 'state',
+    },{
+        x: [state[4]],
+        y: [state[5]],
+        mode: 'lines',
+        xaxis: 'x2',
+        yaxis: 'y2',
+        name: 'trajectory',
+    }];
+ 
+    layout = {
+        xaxis: {title: {text: 'time'}, domain: [0, 1]},
+        yaxis: {title: {text: 'rudder angle [rad]'}, domain: [0.6,1]},
+        xaxis2: {title: {text: 'xpos'}, anchor: 'y2', domain: [0, 1], range: [0,10000]},
+        yaxis2: {title: {text: 'ypos'}, anchor: 'x2', domain: [0, 0.55], range: [10000,0]},
+        showlegend: false,
+        height: 600,
+        width: 400,
     }
 
-    data = [trace1]
-    layout = {
-        xaxis: {range: [0, 10000]},
-        yaxis: {range: [10000, 0]}
-    }
     Plotly.plot('vizData', data, layout);
+
     var integrate = setInterval(advanceOneStep, 5);
     var plot = setInterval(draw, 50);
 
@@ -153,6 +173,7 @@ function advanceOneStep() {
     state = state.map(function(num, idx) {
         return num + dState[idx]*dt
     });
+    timestamp += dt;
 }
 
 function draw() {
@@ -173,7 +194,15 @@ function draw() {
 
     // prepare chart data and layout
     // console.log(state[4], state[5])
-    Plotly.extendTraces('vizData', {x:[[state[4]]], y:[[state[5]]]}, [0]);
+    // update = {
+    //     x: [[timestamp], [state[4]]],
+    //     y: [[state[6]], [state[5]]]
+    // }
+    update = {
+        x: [[timestamp], [timestamp], [state[4]]],
+        y: [[ui], [state[6]], [state[5]]]
+    }
+    Plotly.extendTraces('vizData', update, [0, 1, 2]);
 }
 
 function keyup_handler(event)
@@ -186,15 +215,7 @@ function keyup_handler(event)
 
 function keypress_handler(event)
 {
-    console.log(event.keyCode);
-    // if(event.keyCode == 87)
-    // {
-    //     mod = 1;
-    // }
-    // if(event.keyCode == 83)
-    // {
-    //     mod = -1;
-    // }
+    // console.log(event.keyCode);
     if(event.keyCode == 65)
     {
         ui += 0.08;
