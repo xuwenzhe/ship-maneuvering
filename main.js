@@ -1,22 +1,37 @@
 window.onload = function()
 {
     // state = [u,v,r,psi,xpos,ypos,delta];
-    state = [0,0,0,0,1000,5000,0]
+    dt = 0.2;
+    state = [0,0,0,0,3000,5000,0]
     ui = 0;
 
-    // console.log(dX([1,1,1,1,1,1,1],1))
     
     canvas = document.getElementById("canvas");
     context = canvas.getContext("2d");
     ship = new Image();
-    ship.src="myimage.png";
+    ship.src="ship_top.png";
 
     window.addEventListener("keydown", keypress_handler, false);
     window.addEventListener("keyup", keyup_handler, false);
 
+    // initialize charts
+    var trace1 = {
+        x:[state[4]], 
+        y:[state[5]], 
+        mode:'lines'
+    }
+
+    data = [trace1]
+    layout = {
+        xaxis: {range: [0, 10000]},
+        yaxis: {range: [10000, 0]}
+    }
+    Plotly.plot('vizData', data, layout);
     var integrate = setInterval(advanceOneStep, 5);
     var plot = setInterval(draw, 50);
+
 };
+
 
 function dX(x, ui) {
     // returns the time derivates of the state vector
@@ -136,7 +151,7 @@ function dX(x, ui) {
 function advanceOneStep() {
     [dState,ui] = dX(state,ui)
     state = state.map(function(num, idx) {
-        return num + dState[idx]*0.2
+        return num + dState[idx]*dt
     });
 }
 
@@ -151,10 +166,14 @@ function draw() {
 
     // plot xpos, ypos
     context.save();
-    context.translate(state[4]/12.5, state[5]/12.5);
+    context.translate(state[4]/12.5, state[5]/12.5); // 12.5 = 10000 / 800
     context.rotate(state[3]);
     context.drawImage(ship, -50, -50 * ship.height / ship.width, 100, 100 * ship.height / ship.width);    
     context.restore();
+
+    // prepare chart data and layout
+    // console.log(state[4], state[5])
+    Plotly.extendTraces('vizData', {x:[[state[4]]], y:[[state[5]]]}, [0]);
 }
 
 function keyup_handler(event)
