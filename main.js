@@ -1,12 +1,13 @@
 window.onload = function()
 {
+    // solve homework problems
+    prepare_solution()
     // state = [u,v,r,psi,xpos,ypos,delta];
     dt = 0.2;
     state = [0,0,0,0,3000,5000,0]
     ui = 0.0;
     timestamp = 0.0;
 
-    
     canvas = document.getElementById("canvas");
     context = canvas.getContext("2d");
     ship = new Image();
@@ -18,12 +19,12 @@ window.onload = function()
     // initialize charts
     data = [{
         x: [timestamp],
-        y: [ui],
+        y: [ui*180/Math.PI],
         mode: 'lines',
         name: 'commanded',
     },{
         x: [timestamp],
-        y: [state[6]],
+        y: [state[6]*180/Math.PI],
         mode: 'lines',
         name: 'state',
     },{
@@ -37,7 +38,7 @@ window.onload = function()
  
     layout = {
         xaxis: {title: {text: 'time'}, domain: [0, 1]},
-        yaxis: {title: {text: 'rudder angle [rad]'}, domain: [0.6,1]},
+        yaxis: {title: {text: 'rudder angle [deg]'}, domain: [0.6,1]},
         xaxis2: {title: {text: 'xpos'}, anchor: 'y2', domain: [0, 1], range: [0,10000]},
         yaxis2: {title: {text: 'ypos'}, anchor: 'x2', domain: [0, 0.55], range: [10000,0]},
         showlegend: false,
@@ -102,7 +103,7 @@ function dX(x, ui) {
     xG = -0.023;
     
     Xudot =  -42e-5;   Yvdot =  -748e-5;   Nvdot = 4.646e-5;
-    Xu    = -184e-5;   Yrdot =-9.354e-5;   Nrdot = -4.38e-5;
+    Xu    = -184e-5;   Yrdot =-9.354e-5;   Nrdot = -4.38e-5; // note
     Xuu   = -110e-5;   Yv    = -1160e-5;   Nv    =  -264e-5;
     Xuuu  = -215e-5;   Yr    =  -499e-5;   Nr    =  -166e-5;
     Xvv   = -899e-5;   Yvvv  = -8078e-5;   Nvvv  =  1636e-5;
@@ -168,6 +169,62 @@ function dX(x, ui) {
     return [xdot, delta_c]
 }
 
+function prepare_solution() {
+    // problem 1)
+    Yv    = -1160e-5;
+    Nr    =  -166e-5;
+    Nv    =  -264e-5;
+    Yr    =  -499e-5;
+    C = Yv*Nr - Nv*Yr
+    console.log('============= Problem 1) =============') 
+    console.log('C = ', C, ' > 0')
+    console.log('============= Problem 2) =============')
+    function steady_turning_diameter(rudder_deg) {
+        Yd    =   278e-5;
+        Nd    =  -139e-5;
+        U0 = 7.7175;
+        L = 160.93;
+        delta = -rudder_deg * Math.PI / 180; // calculate rudder angle in radian
+        R = L * C / (delta*(-Yv*Nd + Nv*Yd)); // turning radius
+        v = delta*(-Yd*Nr + Nd*Yr) / C;
+        return [2*R, -v / U0*180/Math.PI]
+    }
+    console.log('turning diameter [m], drift angle[deg] = ', steady_turning_diameter(10));
+    console.log('turning diameter [m], drift angle[deg] = ', steady_turning_diameter(20));
+    console.log('turning diameter [m], drift angle[deg] = ', steady_turning_diameter(30));
+    console.log('============= Problem 3) =============')
+    function nonlinear_sim_const_rudder() {
+        ui = 20*Math.PI/180;
+        state = [0,0,0,0,0,0,ui];
+        states = [state]
+        dt = 0.5;
+        for (i = 0; i < 2000; i++) {
+            [dState, ui] = dX(state, ui);
+            state = state.map(function(num, idx) {return num + dState[idx]*dt;});
+            states.push(state);
+        }
+        return states
+    }
+    console.log(nonlinear_sim_const_rudder());
+    console.log('============= Problem 4) =============')
+    function nonlinear_sim_zigzag() {
+        ui = 20*Math.PI/180;
+        state = [0,0,0,0,0,0,0];
+        states = [state]
+        dt = 0.5;
+        for (i = 0; i < 2000; i++) {
+            [dState, ui] = dX(state, ui);
+            state = state.map(function(num, idx) {return num + dState[idx]*dt;});
+            states.push(state);
+            if (Math.abs(state[3] + state[6]) < 1e-2) {
+                ui = -ui;
+            }
+        }
+        return states
+    }
+    console.log(nonlinear_sim_zigzag());
+}
+
 function advanceOneStep() {
     [dState,ui] = dX(state,ui)
     state = state.map(function(num, idx) {
@@ -180,7 +237,7 @@ function draw() {
     // canvas 800x800
     // real diameter 10000x10000
     context = canvas.getContext("2d");
-    context.clearRect(0, 0, 1000, 1000);
+    context.clearRect(0, 0, 800, 800);
 
     // context.fillStyle = "rgb(200, 100, 220)";
     // context.fillRect(50, 50, 100, 100); // obstacle
@@ -189,7 +246,8 @@ function draw() {
     context.save();
     context.translate(state[4]/12.5, state[5]/12.5); // 12.5 = 10000 / 800
     context.rotate(state[3]);
-    context.drawImage(ship, -50, -50 * ship.height / ship.width, 100, 100 * ship.height / ship.width);    
+    Lvirtual = 160.93*7; // ship image are plotted x times larger
+    context.drawImage(ship, -Lvirtual/25, -Lvirtual/25 * ship.height / ship.width, Lvirtual/12.5, Lvirtual/12.5 * ship.height / ship.width);    
     context.restore();
 
     // prepare chart data and layout
@@ -200,7 +258,7 @@ function draw() {
     // }
     update = {
         x: [[timestamp], [timestamp], [state[4]]],
-        y: [[ui], [state[6]], [state[5]]]
+        y: [[ui*180/Math.PI], [state[6]*180/Math.PI], [state[5]]]
     }
     Plotly.extendTraces('vizData', update, [0, 1, 2]);
 }
@@ -218,10 +276,10 @@ function keypress_handler(event)
     // console.log(event.keyCode);
     if(event.keyCode == 65)
     {
-        ui += 0.08;
+        ui += 0.02;
     }
     if(event.keyCode == 68)
     {
-        ui -= 0.08;
+        ui -= 0.02;
     }
 }
