@@ -1,11 +1,11 @@
 window.onload = function()
 {
     // solve homework problems
-    prepare_solution()
-    // state = [u,v,r,psi,xpos,ypos,delta];
+    // prepare_solution()
+    // state = [u,v,r,psi,xpos,ypos,delta,U0];
     dt = 0.2;
-    state = [0,0,0,0,3000,5000,0]
-    ui = 0.0;
+    state = [0,0,0,0,3000,5000,0,7.7175];
+    ui = [0.0, 7.7175];
     timestamp = 0.0;
 
     canvas = document.getElementById("canvas");
@@ -19,28 +19,50 @@ window.onload = function()
     // initialize charts
     data = [{
         x: [timestamp],
-        y: [ui*180/Math.PI],
+        y: [ui[0]*180/Math.PI],
         mode: 'lines',
         name: 'commanded',
+        xaxis: 'x1',
+        yaxis: 'y1',
     },{
         x: [timestamp],
         y: [state[6]*180/Math.PI],
         mode: 'lines',
         name: 'state',
-    },{
+        xaxis: 'x1',
+        yaxis: 'y1',
+    }, {
+        x: [timestamp],
+        y: [ui[1]],
+        mode: 'lines',
+        name: 'commanded',
+        xaxis: 'x2',
+        yaxis: 'y2',
+    }, {
+        x: [timestamp],
+        y: [state[7]],
+        mode: 'lines',
+        name: 'state',
+        xaxis: 'x2',
+        yaxis: 'y2',
+    }, {
         x: [state[4]],
         y: [state[5]],
         mode: 'lines',
-        xaxis: 'x2',
-        yaxis: 'y2',
+        xaxis: 'x3',
+        yaxis: 'y3',
         name: 'trajectory',
     }];
  
     layout = {
-        xaxis: {title: {text: 'time'}, domain: [0, 1]},
-        yaxis: {title: {text: 'rudder angle [deg]'}, domain: [0.6,1]},
-        xaxis2: {title: {text: 'xpos'}, anchor: 'y2', domain: [0, 1], range: [0,10000]},
-        yaxis2: {title: {text: 'ypos'}, anchor: 'x2', domain: [0, 0.55], range: [10000,0]},
+        xaxis: {title: {text: 'time'}, anchor: 'y1', side: 'top', domain: [0, 0.55]},
+        yaxis: {title: {text: 'rudder angle [deg]'}, anchor: 'x1', domain: [0.6,1]},
+
+        xaxis2: {title: {text: 'time'}, anchor: 'y2', side: 'top', domain: [0.6, 1]},
+        yaxis2: {title: {text: 'mean forward speed [m/s]'}, side: 'right', anchor: 'x2', domain: [0.6,1]},
+
+        xaxis3: {title: {text: 'xpos'}, anchor: 'y3', domain: [0, 1], range: [0,10000]},
+        yaxis3: {title: {text: 'ypos'}, anchor: 'x3', domain: [0, 0.55], range: [10000,0]},
         showlegend: false,
         height: 600,
         width: 400,
@@ -48,6 +70,7 @@ window.onload = function()
 
     Plotly.plot('vizData', data, layout);
 
+    advanceOneStep()
     var integrate = setInterval(advanceOneStep, 5);
     var plot = setInterval(draw, 50);
 
@@ -58,7 +81,7 @@ function dX(x, ui) {
     // returns the time derivates of the state vector
     
     // INPUTS: 
-    // x = [u v r psi xpos ypos delta]
+    // x = [u v r psi xpos ypos delta U0]
     // u      = perturbed surge velocity [m/s]
     // v      = perturbed sway velocity [m/s]
     // r      = perturbed yaw velocity [rad/s]
@@ -66,44 +89,50 @@ function dX(x, ui) {
     // xpos   = position in x-direction [m]
     // ypos   = position in y-direction [m]
     // delta  = actual rudder angle [rad]
+    // U0     = mean velocity [m/s]
+
     
-    // ui = delta_c, commanded rudder angle [rad]
+    // ui = [delta_c, U0c] commanded rudder angle [rad], commanded mean speed [m/s]
     // Reference: M.S. Chislett and J. Stroem-Tejsen (1965)
     //            Planar Motion Mechanism Tests and Full-Scale Steering
     //            and Maneuvering Predictions for a Mariner Class Vessel,
     //            Technical Report Hy-5
     //            Hydro- and Aerodynamics Laboratory, Lyngby, Denmark.
-    if (x.length != 7) {
+
+    if (x.length != 8 || ui.length != 2) {
         return []
     }
 
-    // Nominal Velocity [m/s]
-    U0 = 7.7175; // m/s, about 15 knots
-    V0 = 0.0;
-    
+    // Non-dimensional states and inputs
+    [delta_c, U0c] = ui;
+
     // Normalization variables
     L = 160.93;
-    U = Math.sqrt(Math.pow(U0 + x[0], 2) + Math.pow(x[1],2));
-    
-    // Non-dimensional states and inputs
-    delta_c = ui;
+    U = Math.sqrt(Math.pow(x[7] + x[0], 2) + Math.pow(x[1],2));
     
     u     = x[0]/U;
     v     = x[1]/U;
     r     = x[2]*L/U;
     psi   = x[3];
     delta = x[6];
+    U0    = x[7];
+
+    // Nominal Velocity [m/s]
+    V0 = 0.0;
     
     // Parameters, hydrodynamic derivatives and main dimensions
-    delta_max = 10.0 // max rudder angle [deg]
+    delta_max = 40.0 // max rudder angle [deg]
     Ddelta_max = 5.0 // max rudder derivative [deg/s]
+    U0_max = 10.0    // max mean velocity [m/s]
+    U0_min = 0.0     // min mean velocity [m/s]
+    DU0_max = 5.0    // max mean velocity derivative [m/s^2]
     
     m  = 798e-5;
     Iz = 39.2e-5;
     xG = -0.023;
     
     Xudot =  -42e-5;   Yvdot =  -748e-5;   Nvdot = 4.646e-5;
-    Xu    = -184e-5;   Yrdot =-9.354e-5;   Nrdot = -4.38e-5; // note
+    Xu    = -184e-5;   Yrdot =-9.354e-5;   Nrdot = -43.9e-5;
     Xuu   = -110e-5;   Yv    = -1160e-5;   Nv    =  -264e-5;
     Xuuu  = -215e-5;   Yr    =  -499e-5;   Nr    =  -166e-5;
     Xvv   = -899e-5;   Yvvv  = -8078e-5;   Nvvv  =  1636e-5;
@@ -147,6 +176,24 @@ function dX(x, ui) {
             delta_dot = -Ddelta_max*Math.PI/180
         }
     }
+
+    // Throttle saturation and dynamics
+    if (U0c > U0_max) {
+        U0c = U0_max;
+    }
+    else if (U0c < U0_min) {
+        U0c = U0_min;
+    }
+
+    U0_dot = U0c - U0
+
+    if (U0_dot > DU0_max) {
+        U0_dot = DU0_max
+    }
+    else if (U0_dot < -DU0_max) {
+        U0_dot = -DU0_max
+    }
+
     // Forces and moments
     X = Xu*u + Xuu*Math.pow(u,2) + Xuuu*Math.pow(u,3) + Xvv*Math.pow(v,2) + Xrr*Math.pow(r,2) + Xrv*r*v + Xdd*Math.pow(delta,2) +
         Xudd*u*Math.pow(delta,2) + Xvd*v*delta + Xuvd*u*v*delta
@@ -164,9 +211,10 @@ function dX(x, ui) {
             r*(U/L),
             (Math.cos(psi)*(U0/U+u) - Math.sin(psi)*v)*U,
             (Math.sin(psi)*(U0/U+u) + Math.cos(psi)*v)*U,
-            delta_dot];
-    
-    return [xdot, delta_c]
+            delta_dot,
+            U0_dot];
+
+    return [xdot, [delta_c, U0c]]
 }
 
 function prepare_solution() {
@@ -175,15 +223,17 @@ function prepare_solution() {
     Nr    =  -166e-5;
     Nv    =  -264e-5;
     Yr    =  -499e-5;
-    C = Yv*Nr - Nv*Yr
+    Yd    =   278e-5;
+    Nd    =  -139e-5;
+    U0    = 7.7175;
+    L     = 160.93;
+
     console.log('============= Problem 1) =============') 
+    C = Yv*Nr - Nv*Yr
     console.log('C = ', C, ' > 0')
     console.log('============= Problem 2) =============')
     function steady_turning_diameter(rudder_deg) {
-        Yd    =   278e-5;
-        Nd    =  -139e-5;
-        U0 = 7.7175;
-        L = 160.93;
+
         delta = -rudder_deg * Math.PI / 180; // calculate rudder angle in radian
         R = L * C / (delta*(-Yv*Nd + Nv*Yd)); // turning radius
         v = delta*(-Yd*Nr + Nd*Yr) / C;
@@ -194,11 +244,11 @@ function prepare_solution() {
     console.log('turning diameter [m], drift angle[deg] = ', steady_turning_diameter(30));
     console.log('============= Problem 3) =============')
     function nonlinear_sim_const_rudder() {
-        ui = 20*Math.PI/180;
-        state = [0,0,0,0,0,0,ui];
+        ui = [20*Math.PI/180, U0];
+        state = [0,0,0,0,0,0,20*Math.PI/180,U0];
         states = [state]
         dt = 0.5;
-        for (i = 0; i < 2000; i++) {
+        for (i = 0; i < 4000; i++) {
             [dState, ui] = dX(state, ui);
             state = state.map(function(num, idx) {return num + dState[idx]*dt;});
             states.push(state);
@@ -208,8 +258,8 @@ function prepare_solution() {
     console.log(nonlinear_sim_const_rudder());
     console.log('============= Problem 4) =============')
     function nonlinear_sim_zigzag() {
-        ui = 20*Math.PI/180;
-        state = [0,0,0,0,0,0,0];
+        ui = [20*Math.PI/180, U0];
+        state = [0,0,0,0,0,0,0,U0];
         states = [state]
         dt = 0.5;
         for (i = 0; i < 2000; i++) {
@@ -217,7 +267,7 @@ function prepare_solution() {
             state = state.map(function(num, idx) {return num + dState[idx]*dt;});
             states.push(state);
             if (Math.abs(state[3] + state[6]) < 1e-2) {
-                ui = -ui;
+                ui[0] = -ui[0];
             }
         }
         return states
@@ -256,30 +306,32 @@ function draw() {
     //     x: [[timestamp], [state[4]]],
     //     y: [[state[6]], [state[5]]]
     // }
-    update = {
-        x: [[timestamp], [timestamp], [state[4]]],
-        y: [[ui*180/Math.PI], [state[6]*180/Math.PI], [state[5]]]
+    updatePlot = {
+        x: [[timestamp], [timestamp], [timestamp], [timestamp], [state[4]]],
+        y: [[ui[0]*180/Math.PI], [state[6]*180/Math.PI], [ui[1]], [state[7]], [state[5]]]
     }
-    Plotly.extendTraces('vizData', update, [0, 1, 2]);
+    Plotly.extendTraces('vizData', updatePlot, [0, 1, 2, 3, 4]);
 }
 
-function keyup_handler(event)
-{
+function keyup_handler(event) {
     if(event.keyCode == 87 || event.keyCode == 83)
     {
         // state[6] = 0;
     }
 }
 
-function keypress_handler(event)
-{
+function keypress_handler(event) {
     // console.log(event.keyCode);
-    if(event.keyCode == 65)
-    {
-        ui += 0.02;
+    if (event.keyCode == 65) {
+        ui[0] += 0.02;
     }
-    if(event.keyCode == 68)
-    {
-        ui -= 0.02;
+    else if (event.keyCode == 68) {
+        ui[0] -= 0.02;
+    }
+    else if (event.keyCode == 87) {
+        ui[1] += 0.2;
+    }
+    else if (event.keyCode == 83) {
+        ui[1] -= 0.2;
     }
 }
